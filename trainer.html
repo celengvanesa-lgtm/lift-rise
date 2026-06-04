@@ -1,0 +1,1024 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <meta name="apple-mobile-web-app-title" content="TRAINER"/>
+  <meta name="theme-color" content="#080808"/>
+  <title>TRAINER — Fitness Profile</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Outfit:wght@300;400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    html,body{height:100%;background:#060606;color:#fff;-webkit-font-smoothing:antialiased}
+    body{overscroll-behavior:none}
+    @keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+    input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
+    input[type=number]{-moz-appearance:textfield}
+    ::-webkit-scrollbar{width:4px}
+    ::-webkit-scrollbar-track{background:#111}
+    ::-webkit-scrollbar-thumb{background:#2a2a2a;border-radius:2px}
+    select option{background:#161616;color:#fff}
+    #root{min-height:100vh}
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+// Silence the Babel "use precompile" warning — this is intentional for a local file
+const _cw = console.warn.bind(console);
+console.warn = (...a) => { if (typeof a[0] === 'string' && a[0].includes('Babel transformer')) return; _cw(...a); };
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+
+
+// ─── PERSISTENT STORAGE (artifact window.storage API) ────────────────────────
+const DB = {
+  get: (k, fb = null) => {
+    try { const r = localStorage.getItem(k); return Promise.resolve(r ? JSON.parse(r) : fb); }
+    catch { return Promise.resolve(fb); }
+  },
+  set: (k, v) => {
+    try { localStorage.setItem(k, JSON.stringify(v)); } catch {}
+    return Promise.resolve();
+  },
+};
+
+// ─── CONSTANTS ────────────────────────────────────────────────────────────────
+const SEC = {
+  gym:   { id:"gym",   label:"GYM",   icon:"💪", color:"#FF4D00" },
+  food:  { id:"food",  label:"FOOD",  icon:"🥗", color:"#00C875" },
+  padel: { id:"padel", label:"PADEL", icon:"🎾", color:"#00BFFF" },
+};
+
+const WORKOUT_TEMPLATES = {
+  1: { label:"DAY 1", title:"Quads + Back", blocks:[
+    { id:"b1", sets:4, exercises:[{name:"Hack Squat",type:"weighted"}] },
+    { id:"b2", sets:4, exercises:[{name:"Lat Pull Down",type:"weighted"}] },
+    { id:"b3", sets:3, exercises:[{name:"One Arm DB Row",type:"weighted"},{name:"DB Bicep Curls",type:"weighted"}] },
+    { id:"b4", sets:3, exercises:[{name:"Pull Ups",type:"reps"},{name:"Ski Erg",type:"time"}] },
+    { id:"b5", sets:3, exercises:[{name:"Leg Extensions",type:"weighted"}] },
+  ]},
+  2: { label:"DAY 2", title:"Glutes + Shoulders", blocks:[
+    { id:"b1", sets:1, exercises:[{name:"Stair Master",type:"time"}] },
+    { id:"b2", sets:4, exercises:[{name:"Hip Thrusts",type:"weighted"}] },
+    { id:"b3", sets:3, exercises:[{name:"DB Squat",type:"weighted"},{name:"Shoulder Press",type:"weighted"}] },
+    { id:"b4", sets:4, exercises:[{name:"RDL",type:"weighted"}] },
+    { id:"b5", sets:3, exercises:[{name:"Lateral Raises",type:"weighted"},{name:"Tricep Pushdown",type:"weighted"}] },
+  ]},
+  3: { label:"DAY 3", title:"Body + Core", blocks:[
+    { id:"b1", sets:4, exercises:[{name:"Deadlifts",type:"weighted"},{name:"Plank Shoulder Taps",type:"reps"}] },
+    { id:"b2", sets:4, exercises:[{name:"Cable Row",type:"weighted"}] },
+    { id:"b3", sets:4, exercises:[{name:"DB Shoulder Press",type:"weighted"},{name:"Single Arm DB Sit Ups",type:"reps"}] },
+  ]},
+};
+
+const DAYS = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
+const MEAL_TYPES = ["Breakfast","Morning Snack","Lunch","Afternoon Snack","Dinner","Post-Workout"];
+const MEAL_CALORIES = { Breakfast:400, "Morning Snack":150, Lunch:550, "Afternoon Snack":200, Dinner:600, "Post-Workout":250 };
+
+const PADEL_INIT_SKILLS = [
+  { id:1, category:"Movement", title:"Ready position", note:"Bat held front and slightly high to receive well", learned:true },
+  { id:2, category:"Movement", title:"Leg movement (løb)", note:"Active footwork, always repositioning", learned:true },
+  { id:3, category:"Shots", title:"Bandeja", note:"Overhead defensive shot off the glass — keep working on consistency", learned:true },
+  { id:4, category:"Strategy", title:"Target one player", note:"Serve to one player repeatedly — build pressure", learned:true },
+  { id:5, category:"Strategy", title:"Attack in threes", note:"Attack same player 3x before switching", learned:true },
+  { id:6, category:"Strategy", title:"Cover the middle", note:"After hitting left side to right player → cover middle of court", learned:true },
+  { id:7, category:"Shots", title:"Vibora / Smash", note:"Attacking overhead — work on power and wrist snap", learned:false },
+  { id:8, category:"Movement", title:"Net play", note:"Basic net positioning — refine when to approach", learned:true },
+];
+
+// ─── SHARED UI ────────────────────────────────────────────────────────────────
+const iSt = { background:"#111", border:"1px solid #2a2a2a", borderRadius:6, color:"#fff",
+  fontSize:13, fontFamily:"'DM Mono',monospace", padding:"5px 8px", width:0, flex:1, outline:"none", textAlign:"center" };
+
+function Tag({ color, children }) {
+  return <span style={{ fontSize:9, fontFamily:"'DM Mono',monospace", letterSpacing:2,
+    color, background:color+"18", border:`1px solid ${color}33`, padding:"2px 8px", borderRadius:4 }}>{children}</span>;
+}
+function Card({ children, style }) {
+  return <div style={{ background:"#0d0d0d", border:"1px solid #1e1e1e", borderRadius:14, padding:16, marginBottom:10, ...style }}>{children}</div>;
+}
+function Btn({ children, onClick, color="#fff", filled=false, small=false, disabled=false, style={} }) {
+  return <button onClick={onClick} disabled={disabled} style={{
+    background:filled?color:"transparent", border:`1.5px solid ${disabled?"#222":color}`,
+    color:filled?"#000":(disabled?"#333":color),
+    fontFamily:"'DM Mono',monospace", fontSize:small?10:12, fontWeight:700, letterSpacing:1.5,
+    padding:small?"5px 12px":"9px 20px", borderRadius:8, cursor:disabled?"not-allowed":"pointer",
+    textTransform:"uppercase", ...style }}>{children}</button>;
+}
+function SectionLabel({ color, children }) {
+  return <div style={{ fontSize:9, color, fontFamily:"'DM Mono',monospace", letterSpacing:3, marginBottom:8, textTransform:"uppercase" }}>{children}</div>;
+}
+function Empty({ children }) {
+  return <div style={{ textAlign:"center", padding:"48px 0", color:"#2a2a2a", fontFamily:"'DM Mono',monospace", fontSize:11, letterSpacing:2 }}>{children}</div>;
+}
+function Loader() {
+  return <div style={{ textAlign:"center", padding:"60px 0", color:"#333", fontFamily:"'DM Mono',monospace", fontSize:11, letterSpacing:3 }}>LOADING...</div>;
+}
+
+// ─── PROGRESS CHART ───────────────────────────────────────────────────────────
+function ProgressChart({ data, color }) {
+  if (!data || data.length < 2) return (
+    <div style={{ padding:"16px 0", textAlign:"center", color:"#333", fontFamily:"'DM Mono',monospace", fontSize:10 }}>
+      Log at least 2 sessions to see progress
+    </div>
+  );
+  const W=320, H=90, P={t:18,b:26,l:34,r:10};
+  const iW=W-P.l-P.r, iH=H-P.t-P.b;
+  const vals=data.map(d=>d.v), mn=Math.min(...vals), mx=Math.max(...vals), rng=mx-mn||1;
+  const px=i=>P.l+(i/(data.length-1))*iW;
+  const py=v=>P.t+iH-((v-mn)/rng)*iH;
+  const pts=data.map((d,i)=>`${px(i)},${py(d.v)}`).join(" ");
+  const area=`M${px(0)},${py(data[0].v)} `+data.slice(1).map((d,i)=>`L${px(i+1)},${py(d.v)}`).join(" ")+
+    ` L${px(data.length-1)},${H-P.b} L${px(0)},${H-P.b} Z`;
+  return (
+    <svg width={W} height={H} style={{ overflow:"visible", maxWidth:"100%" }}>
+      <defs>
+        <linearGradient id="cg" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.25"/>
+          <stop offset="100%" stopColor={color} stopOpacity="0"/>
+        </linearGradient>
+      </defs>
+      {[0,0.5,1].map(f=>{
+        const y=P.t+iH*(1-f), val=mn+rng*f;
+        return <g key={f}>
+          <line x1={P.l} y1={y} x2={W-P.r} y2={y} stroke="#1a1a1a" strokeWidth="1"/>
+          <text x={P.l-4} y={y+4} textAnchor="end" fill="#333" fontSize="9" fontFamily="'DM Mono',monospace">{Math.round(val)}</text>
+        </g>;
+      })}
+      <path d={area} fill="url(#cg)"/>
+      <polyline points={pts} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round"/>
+      {data.map((d,i)=>(
+        <g key={i}>
+          <circle cx={px(i)} cy={py(d.v)} r="4" fill={color}/>
+          <text x={px(i)} y={H-P.b+14} textAnchor="middle" fill="#444" fontSize="8" fontFamily="'DM Mono',monospace">
+            {new Date(d.date).toLocaleDateString("en-GB",{day:"numeric",month:"short"})}
+          </text>
+        </g>
+      ))}
+    </svg>
+  );
+}
+
+// ─── GYM SECTION ─────────────────────────────────────────────────────────────
+function GymSection({ tab, setTab }) {
+  const C = SEC.gym.color;
+  const [loaded, setLoaded]   = useState(false);
+  const [lastVals, setLastVals]       = useState({});
+  const [sessionLog, setSessionLog]   = useState({});
+  const [customBlocks, setCustomBlocks] = useState({});
+  const [history, setHistory]         = useState([]);
+  const [activeDay, setActiveDay]     = useState(null);
+  const [timer, setTimer]     = useState(0);
+  const [running, setRunning] = useState(false);
+  const [restSecs, setRestSecs]   = useState(0);
+  const [restActive, setRestActive] = useState(false);
+  const [editMode, setEditMode]   = useState(false);
+  const [progressEx, setProgressEx] = useState(null);
+  const timerRef = useRef();
+  const fmt = s=>`${String(Math.floor(s/60)).padStart(2,"0")}:${String(s%60).padStart(2,"0")}`;
+
+  // Load all data from persistent storage on mount
+  useEffect(() => {
+    (async () => {
+      const [lv, cb, hist] = await Promise.all([
+        DB.get("gym_last_vals", {}),
+        DB.get("gym_custom_blocks", {}),
+        DB.get("gym_history", []),
+      ]);
+      setLastVals(lv);
+      setCustomBlocks(cb);
+      setHistory(hist);
+      setLoaded(true);
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (running) { timerRef.current = setInterval(()=>setTimer(t=>t+1), 1000); }
+    else clearInterval(timerRef.current);
+    return () => clearInterval(timerRef.current);
+  }, [running]);
+
+  useEffect(() => {
+    if (restActive && restSecs > 0) {
+      const id = setTimeout(()=>setRestSecs(s=>s-1), 1000);
+      return ()=>clearTimeout(id);
+    } else if (restSecs===0) setRestActive(false);
+  }, [restActive, restSecs]);
+
+  const getBlocks = day => customBlocks[day] || WORKOUT_TEMPLATES[day].blocks;
+
+  const buildSessionLog = day => {
+    const log = {};
+    getBlocks(day).forEach(b => {
+      log[b.id] = Array.from({length:b.sets}, ()=>
+        Object.fromEntries(b.exercises.map(ex => {
+          const last = lastVals[day]?.[ex.name] || {};
+          return [ex.name, { kg:last.kg||"", reps:last.reps||"", time:last.time||"" }];
+        }))
+      );
+    });
+    return log;
+  };
+
+  const openDay = day => {
+    setActiveDay(day);
+    setSessionLog(buildSessionLog(day));
+    setTimer(0); setRunning(false); setEditMode(false);
+    setTab("log");
+  };
+
+  const updateCell = (blockId, setIdx, exName, field, val) => {
+    setSessionLog(prev => {
+      const block = [...(prev[blockId]||[])];
+      block[setIdx] = { ...block[setIdx], [exName]: { ...(block[setIdx]?.[exName]||{}), [field]:val } };
+      return { ...prev, [blockId]:block };
+    });
+  };
+
+  const finishSession = async () => {
+    // Save last values for prefill
+    const newLast = { ...lastVals, [activeDay]:{} };
+    getBlocks(activeDay).forEach(b => {
+      b.exercises.forEach(ex => {
+        const sets = sessionLog[b.id]||[];
+        for (let i=sets.length-1; i>=0; i--) {
+          const v = sets[i]?.[ex.name];
+          if (v && (v.kg||v.reps||v.time)) {
+            newLast[activeDay][ex.name] = { kg:v.kg||"", reps:v.reps||"", time:v.time||"" };
+            break;
+          }
+        }
+      });
+    });
+    setLastVals(newLast);
+    await DB.set("gym_last_vals", newLast);
+
+    // Save session to history
+    const session = { id:Date.now(), date:new Date().toISOString(), dayId:activeDay,
+      duration:timer, log:sessionLog, blocks:getBlocks(activeDay) };
+    const newH = [...history, session];
+    setHistory(newH);
+    await DB.set("gym_history", newH);
+
+    setRunning(false); setActiveDay(null); setTab("history");
+  };
+
+  const deleteBlock = async (day, blockId) => {
+    const blocks = getBlocks(day).filter(b=>b.id!==blockId);
+    const updated = { ...customBlocks, [day]:blocks };
+    setCustomBlocks(updated);
+    await DB.set("gym_custom_blocks", updated);
+  };
+
+  const moveBlock = async (day, blockId, dir) => {
+    const blocks = [...getBlocks(day)];
+    const idx = blocks.findIndex(b=>b.id===blockId);
+    const ni = idx+dir;
+    if (ni<0||ni>=blocks.length) return;
+    [blocks[idx],blocks[ni]] = [blocks[ni],blocks[idx]];
+    const updated = { ...customBlocks, [day]:blocks };
+    setCustomBlocks(updated);
+    await DB.set("gym_custom_blocks", updated);
+  };
+
+  const deleteHistoryEntry = async id => {
+    const newH = history.filter(h=>h.id!==id);
+    setHistory(newH);
+    await DB.set("gym_history", newH);
+  };
+
+  const weightedExercises = [];
+  Object.values(WORKOUT_TEMPLATES).forEach(w=>w.blocks.forEach(b=>b.exercises.forEach(ex=>{
+    if (ex.type==="weighted"&&!weightedExercises.includes(ex.name)) weightedExercises.push(ex.name);
+  })));
+
+  const getProgressData = exName =>
+    history.flatMap(sess=>{
+      const blocks = sess.blocks||getBlocks(sess.dayId);
+      const block = blocks.find(b=>b.exercises.some(e=>e.name===exName));
+      if (!block) return [];
+      let max=0;
+      (sess.log?.[block.id]||[]).forEach(row=>{
+        const k=parseFloat(row?.[exName]?.kg);
+        if (!isNaN(k)&&k>max) max=k;
+      });
+      return max>0?[{date:sess.date,v:max}]:[];
+    });
+
+  if (!loaded) return <Loader/>;
+
+  // ── PLAN
+  if (tab==="plan") return (
+    <div style={{paddingBottom:20}}>
+      <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
+        <Tag color={C}>{history.length} SESSIONS</Tag>
+        {history.length>0&&<Tag color={C}>LAST: {new Date([...history].pop().date).toLocaleDateString("en-GB",{day:"numeric",month:"short"})}</Tag>}
+      </div>
+      {Object.entries(WORKOUT_TEMPLATES).map(([day,w])=>{
+        const blocks=getBlocks(Number(day));
+        const done=history.filter(h=>h.dayId==day).length;
+        return (
+          <div key={day} style={{background:"#0d0d0d",border:"1px solid #1e1e1e",borderRadius:14,padding:"14px 16px",
+            marginBottom:10,display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer",transition:"border-color .2s"}}
+            onMouseEnter={e=>e.currentTarget.style.borderColor=C}
+            onMouseLeave={e=>e.currentTarget.style.borderColor="#1e1e1e"}
+            onClick={()=>openDay(Number(day))}>
+            <div>
+              <div style={{fontSize:9,color:C,fontFamily:"'DM Mono',monospace",letterSpacing:3,marginBottom:3}}>{w.label} · {done}× done</div>
+              <div style={{fontSize:17,fontWeight:700,color:"#fff",fontFamily:"'Outfit',sans-serif"}}>{w.title}</div>
+              <div style={{fontSize:11,color:"#444",fontFamily:"'DM Mono',monospace",marginTop:3}}>
+                {blocks.reduce((a,b)=>a+b.sets,0)} sets · {blocks.length} blocks
+              </div>
+            </div>
+            <div style={{width:34,height:34,borderRadius:"50%",background:C+"22",border:`1px solid ${C}44`,
+              display:"flex",alignItems:"center",justifyContent:"center",color:C,fontSize:16}}>→</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+
+  // ── LOG
+  if (tab==="log"&&activeDay) {
+    const w=WORKOUT_TEMPLATES[activeDay];
+    const blocks=getBlocks(activeDay);
+    const lastSession=[...history].reverse().find(h=>h.dayId===activeDay);
+    return (
+      <div style={{paddingBottom:20}}>
+        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}>
+          <button onClick={()=>{setActiveDay(null);setRunning(false);setTimer(0);setTab("plan");}}
+            style={{background:"none",border:"none",color:"#555",cursor:"pointer",fontSize:18,padding:0}}>←</button>
+          <div style={{flex:1}}>
+            <div style={{fontSize:9,color:C,fontFamily:"'DM Mono',monospace",letterSpacing:3}}>{w.label}</div>
+            <div style={{fontSize:16,fontWeight:700,color:"#fff",fontFamily:"'Outfit',sans-serif"}}>{w.title}</div>
+          </div>
+          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+            <button onClick={()=>setEditMode(e=>!e)}
+              style={{background:editMode?"#1a1a1a":"none",border:`1px solid ${editMode?C:"#333"}`,color:editMode?C:"#555",
+                fontFamily:"'DM Mono',monospace",fontSize:10,padding:"4px 10px",borderRadius:6,cursor:"pointer"}}>
+              {editMode?"DONE":"EDIT"}
+            </button>
+            <div style={{fontFamily:"'DM Mono',monospace",fontSize:15,color:running?C:"#555",cursor:"pointer",minWidth:52,textAlign:"right"}}
+              onClick={()=>setRunning(r=>!r)}>{fmt(timer)}</div>
+          </div>
+        </div>
+
+        {!running&&timer===0
+          ?<Btn color={C} filled onClick={()=>setRunning(true)} style={{width:"100%",marginBottom:12}}>▶ START SESSION</Btn>
+          :<div style={{display:"flex",gap:8,marginBottom:10}}>
+            <Btn color={C} onClick={()=>setRunning(r=>!r)} style={{flex:1}}>{running?"⏸ PAUSE":"▶ RESUME"}</Btn>
+            {[60,90,120].map(s=>(
+              <button key={s} onClick={()=>{setRestSecs(s);setRestActive(true);}}
+                style={{background:"#111",border:"1px solid #2a2a2a",color:restActive?C:"#555",
+                  fontFamily:"'DM Mono',monospace",fontSize:11,fontWeight:700,padding:"6px 10px",borderRadius:8,cursor:"pointer"}}>
+                {restActive&&restSecs>0?`${restSecs}s`:s+"s"}
+              </button>
+            ))}
+          </div>
+        }
+        {restActive&&restSecs>0&&(
+          <div style={{background:C+"11",border:`1px solid ${C}33`,borderRadius:10,padding:"8px 14px",marginBottom:10,
+            fontFamily:"'DM Mono',monospace",fontSize:13,color:C,textAlign:"center"}}>
+            REST — {fmt(restSecs)} remaining
+          </div>
+        )}
+
+        {blocks.map((block,bIdx)=>{
+          const blockLog=sessionLog[block.id]||[];
+          return (
+            <Card key={block.id}>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                <span style={{background:C,color:"#000",fontFamily:"'DM Mono',monospace",fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4}}>{block.sets}×</span>
+                <span style={{color:"#fff",fontSize:13,fontFamily:"'Outfit',sans-serif",fontWeight:600,flex:1}}>
+                  {block.exercises.map(e=>e.name).join(" / ")}
+                </span>
+                {editMode&&(
+                  <div style={{display:"flex",gap:4}}>
+                    <button onClick={()=>moveBlock(activeDay,block.id,-1)} disabled={bIdx===0}
+                      style={{background:"#161616",border:"1px solid #2a2a2a",color:bIdx===0?"#333":"#666",borderRadius:4,cursor:bIdx===0?"not-allowed":"pointer",padding:"2px 8px",fontSize:13}}>↑</button>
+                    <button onClick={()=>moveBlock(activeDay,block.id,1)} disabled={bIdx===blocks.length-1}
+                      style={{background:"#161616",border:"1px solid #2a2a2a",color:bIdx===blocks.length-1?"#333":"#666",borderRadius:4,cursor:bIdx===blocks.length-1?"not-allowed":"pointer",padding:"2px 8px",fontSize:13}}>↓</button>
+                    <button onClick={()=>deleteBlock(activeDay,block.id)}
+                      style={{background:"#1a0a0a",border:"1px solid #3a1a1a",color:"#FF4D4D",borderRadius:4,cursor:"pointer",padding:"2px 8px",fontSize:12}}>✕</button>
+                  </div>
+                )}
+              </div>
+              <div style={{display:"flex",gap:6,paddingLeft:26,marginBottom:4}}>
+                {block.exercises.flatMap(ex=>ex.type==="weighted"?["kg","reps"]:[ex.type==="time"?"sec":"reps"])
+                  .map((h,i)=><div key={i} style={{flex:1,fontSize:9,color:"#333",fontFamily:"'DM Mono',monospace",textAlign:"center",letterSpacing:1}}>{h}</div>)}
+                {lastSession&&<div style={{width:60,fontSize:9,color:"#333",fontFamily:"'DM Mono',monospace",textAlign:"center",letterSpacing:1}}>prev</div>}
+              </div>
+              {Array.from({length:block.sets}).map((_,setIdx)=>{
+                const row=blockLog[setIdx]||{};
+                const prevRow=(lastSession?.log?.[block.id]||[])[setIdx];
+                return (
+                  <div key={setIdx} style={{display:"flex",gap:6,padding:"5px 0",borderBottom:"1px solid #1a1a1a",alignItems:"center"}}>
+                    <span style={{color:"#444",fontSize:11,fontFamily:"'DM Mono',monospace",minWidth:20}}>S{setIdx+1}</span>
+                    {block.exercises.map(ex=>{
+                      const val=row[ex.name]||{};
+                      const up=(f,v)=>updateCell(block.id,setIdx,ex.name,f,v);
+                      return (
+                        <div key={ex.name} style={{flex:1,display:"flex",gap:4}}>
+                          {ex.type==="weighted"&&<>
+                            <input type="number" placeholder="kg" value={val.kg||""} style={iSt} onChange={e=>up("kg",e.target.value)}/>
+                            <input type="number" placeholder="reps" value={val.reps||""} style={iSt} onChange={e=>up("reps",e.target.value)}/>
+                          </>}
+                          {ex.type==="reps"&&<input type="number" placeholder="reps" value={val.reps||""} style={{...iSt,flex:2}} onChange={e=>up("reps",e.target.value)}/>}
+                          {ex.type==="time"&&<input type="number" placeholder="sec" value={val.time||""} style={{...iSt,flex:2}} onChange={e=>up("time",e.target.value)}/>}
+                        </div>
+                      );
+                    })}
+                    {lastSession&&(
+                      <div style={{width:60,textAlign:"center"}}>
+                        {block.exercises.map(ex=>{
+                          const pv=prevRow?.[ex.name];
+                          if (!pv) return null;
+                          const txt=ex.type==="weighted"?(pv.kg&&pv.reps?`${pv.kg}×${pv.reps}`:""):(pv.reps||pv.time||"");
+                          return txt?<div key={ex.name} style={{fontSize:9,color:"#444",fontFamily:"'DM Mono',monospace"}}>{txt}</div>:null;
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </Card>
+          );
+        })}
+        <Btn color="#00C875" filled onClick={finishSession} style={{width:"100%",marginTop:8}}>✓ FINISH & SAVE</Btn>
+      </div>
+    );
+  }
+
+  // ── HISTORY
+  if (tab==="history") return (
+    <div style={{paddingBottom:20}}>
+      {history.length>=2&&(
+        <Card style={{marginBottom:16}}>
+          <SectionLabel color={C}>PROGRESS CHART</SectionLabel>
+          <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12}}>
+            {weightedExercises.map(ex=>{
+              const d=getProgressData(ex);
+              if (!d.length) return null;
+              return (
+                <button key={ex} onClick={()=>setProgressEx(progressEx===ex?null:ex)}
+                  style={{fontSize:10,fontFamily:"'DM Mono',monospace",padding:"4px 10px",borderRadius:6,cursor:"pointer",
+                    border:`1px solid ${progressEx===ex?C:"#2a2a2a"}`,background:progressEx===ex?C+"22":"#161616",
+                    color:progressEx===ex?C:"#555"}}>
+                  {ex}
+                </button>
+              );
+            })}
+          </div>
+          {progressEx&&(()=>{
+            const d=getProgressData(progressEx);
+            const first=d[0]?.v,last=d[d.length-1]?.v;
+            const pct=first?((last-first)/first*100).toFixed(1):null;
+            return (
+              <div>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                  <div style={{fontSize:13,color:"#fff",fontFamily:"'Outfit',sans-serif",fontWeight:600}}>{progressEx}</div>
+                  {pct!==null&&<span style={{fontSize:11,fontFamily:"'DM Mono',monospace",fontWeight:700,
+                    color:parseFloat(pct)>=0?"#00C875":"#FF4D4D",
+                    background:parseFloat(pct)>=0?"rgba(0,200,117,.12)":"rgba(255,77,77,.12)",
+                    padding:"2px 8px",borderRadius:4}}>
+                    {parseFloat(pct)>=0?"+":""}{pct}%
+                  </span>}
+                </div>
+                <ProgressChart data={d} color={C}/>
+              </div>
+            );
+          })()}
+          {!progressEx&&<div style={{color:"#333",fontSize:11,fontFamily:"'DM Mono',monospace",textAlign:"center",padding:"8px 0"}}>TAP AN EXERCISE TO SEE PROGRESS</div>}
+        </Card>
+      )}
+
+      {[...history].reverse().map(sess=>{
+        const w=WORKOUT_TEMPLATES[sess.dayId];
+        let vol=0;
+        Object.values(sess.log||{}).forEach(sets=>sets.forEach(row=>Object.values(row||{}).forEach(v=>{
+          const k=parseFloat(v?.kg),r=parseFloat(v?.reps);
+          if (!isNaN(k)&&!isNaN(r)) vol+=k*r;
+        })));
+        return (
+          <Card key={sess.id}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+              <div>
+                <Tag color={C}>{w?.label}</Tag>
+                <div style={{fontSize:15,fontWeight:700,color:"#fff",fontFamily:"'Outfit',sans-serif",marginTop:4}}>{w?.title}</div>
+                <div style={{fontSize:10,color:"#444",fontFamily:"'DM Mono',monospace",marginTop:2}}>
+                  {new Date(sess.date).toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short"})}
+                  {sess.duration>0&&` · ${fmt(sess.duration)}`}
+                </div>
+              </div>
+              <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:6}}>
+                <div style={{color:C,fontSize:16,fontFamily:"'DM Mono',monospace",fontWeight:700}}>{Math.round(vol).toLocaleString()}</div>
+                <div style={{fontSize:9,color:"#444",fontFamily:"'DM Mono',monospace"}}>kg·rep</div>
+                <button onClick={()=>deleteHistoryEntry(sess.id)}
+                  style={{background:"none",border:"none",color:"#333",cursor:"pointer",fontSize:12,padding:0}}>✕</button>
+              </div>
+            </div>
+          </Card>
+        );
+      })}
+      {history.length===0&&<Empty>FINISH A WORKOUT TO SEE HISTORY</Empty>}
+    </div>
+  );
+
+  return null;
+}
+
+// ─── FOOD SECTION ─────────────────────────────────────────────────────────────
+function FoodSection() {
+  const C = SEC.food.color;
+  const [loaded, setLoaded]   = useState(false);
+  const [tab, setTab]         = useState("meals");
+  const [meals, setMeals]     = useState([]);
+  const [grocery, setGrocery] = useState([]);
+  const [showAddMeal, setShowAddMeal] = useState(false);
+  const [editMealId, setEditMealId]   = useState(null);
+  const [newMeal, setNewMeal] = useState({ day:"Monday", mealType:"Breakfast", name:"", notes:"", protein:"", calories:"" });
+  const [newItem, setNewItem] = useState("");
+  const [selectedDay, setSelectedDay] = useState("Monday");
+
+  useEffect(()=>{
+    (async()=>{
+      const [m,g] = await Promise.all([DB.get("food_meals",[]), DB.get("food_grocery",[])]);
+      setMeals(m); setGrocery(g); setLoaded(true);
+    })();
+  },[]);
+
+  const saveMeals = async m => { setMeals(m); await DB.set("food_meals",m); };
+  const saveGrocery = async g => { setGrocery(g); await DB.set("food_grocery",g); };
+
+  const addMeal = async () => {
+    if (!newMeal.name.trim()) return;
+    const estCal = newMeal.calories || MEAL_CALORIES[newMeal.mealType] || "";
+    const m = { ...newMeal, calories:estCal, id:Date.now() };
+    if (editMealId) {
+      await saveMeals(meals.map(x=>x.id===editMealId?m:x));
+      setEditMealId(null);
+    } else {
+      await saveMeals([...meals,m]);
+    }
+    setNewMeal({day:selectedDay,mealType:"Breakfast",name:"",notes:"",protein:"",calories:""});
+    setShowAddMeal(false);
+  };
+
+  const deleteMeal = id => saveMeals(meals.filter(m=>m.id!==id));
+  const startEdit = meal => { setNewMeal({...meal}); setEditMealId(meal.id); setShowAddMeal(true); };
+
+  const addGroceryItem = async () => {
+    if (!newItem.trim()) return;
+    await saveGrocery([...grocery,{id:Date.now(),text:newItem.trim(),checked:false}]);
+    setNewItem("");
+  };
+  const toggleGrocery = id => saveGrocery(grocery.map(g=>g.id===id?{...g,checked:!g.checked}:g));
+  const deleteGrocery = id => saveGrocery(grocery.filter(g=>g.id!==id));
+  const clearChecked  = () => saveGrocery(grocery.filter(g=>!g.checked));
+
+  const dayMeals = meals.filter(m=>m.day===selectedDay).sort((a,b)=>MEAL_TYPES.indexOf(a.mealType)-MEAL_TYPES.indexOf(b.mealType));
+  const totalCal  = dayMeals.reduce((a,m)=>a+(parseFloat(m.calories)||0),0);
+  const totalProt = dayMeals.reduce((a,m)=>a+(parseFloat(m.protein)||0),0);
+
+  const taStyle = { width:"100%",background:"#161616",border:"1px solid #2a2a2a",borderRadius:8,
+    color:"#ccc",fontSize:13,fontFamily:"'Outfit',sans-serif",padding:"10px 12px",
+    outline:"none",resize:"vertical",lineHeight:1.6,boxSizing:"border-box" };
+
+  if (!loaded) return <Loader/>;
+
+  return (
+    <div style={{paddingBottom:20}}>
+      <div style={{display:"flex",gap:0,marginBottom:14,background:"#0d0d0d",borderRadius:10,padding:4,border:"1px solid #1e1e1e"}}>
+        {[["meals","MY MEALS"],["grocery","GROCERY"]].map(([t,l])=>(
+          <button key={t} onClick={()=>setTab(t)}
+            style={{flex:1,padding:"9px 0",borderRadius:8,border:"none",cursor:"pointer",
+              fontFamily:"'DM Mono',monospace",fontSize:10,fontWeight:700,letterSpacing:2,
+              background:tab===t?"#fff":"none",color:tab===t?"#000":"#444"}}>{l}</button>
+        ))}
+      </div>
+
+      {tab==="meals"&&(
+        <div>
+          <div style={{display:"flex",gap:4,marginBottom:14,overflowX:"auto",paddingBottom:4}}>
+            {DAYS.map(d=>(
+              <button key={d} onClick={()=>{setSelectedDay(d);setShowAddMeal(false);}}
+                style={{flexShrink:0,padding:"5px 10px",borderRadius:8,border:`1px solid ${selectedDay===d?C:"#2a2a2a"}`,
+                  background:selectedDay===d?C+"22":"#0d0d0d",color:selectedDay===d?C:"#555",
+                  fontFamily:"'DM Mono',monospace",fontSize:10,cursor:"pointer"}}>
+                {d.slice(0,3).toUpperCase()}
+              </button>
+            ))}
+          </div>
+
+          {dayMeals.length>0&&(
+            <div style={{display:"flex",gap:8,marginBottom:12}}>
+              {totalCal>0&&<Tag color={C}>{Math.round(totalCal)} KCAL</Tag>}
+              {totalProt>0&&<Tag color={C}>{Math.round(totalProt)}G PROTEIN</Tag>}
+            </div>
+          )}
+
+          <Btn color={C} filled onClick={()=>{setShowAddMeal(true);setEditMealId(null);setNewMeal({day:selectedDay,mealType:"Breakfast",name:"",notes:"",protein:"",calories:""}); }}
+            style={{width:"100%",marginBottom:14}}>+ LOG MEAL</Btn>
+
+          {showAddMeal&&(
+            <Card style={{marginBottom:14}}>
+              <SectionLabel color={C}>{editMealId?"EDIT MEAL":"ADD MEAL"}</SectionLabel>
+              <div style={{fontSize:9,color:"#555",fontFamily:"'DM Mono',monospace",marginBottom:4}}>MEAL TYPE</div>
+              <select value={newMeal.mealType} onChange={e=>setNewMeal({...newMeal,mealType:e.target.value})}
+                style={{...iSt,width:"100%",flex:"unset",background:"#161616",height:32,textAlign:"left",padding:"0 8px",marginBottom:8}}>
+                {MEAL_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
+              </select>
+              <input placeholder="What did you eat?" value={newMeal.name}
+                onChange={e=>setNewMeal({...newMeal,name:e.target.value})}
+                style={{...iSt,width:"100%",flex:"unset",background:"#161616",marginBottom:8,textAlign:"left",padding:"8px 10px"}}/>
+              <textarea placeholder="Notes (optional)" value={newMeal.notes}
+                onChange={e=>setNewMeal({...newMeal,notes:e.target.value})}
+                style={{...taStyle,minHeight:44,marginBottom:8,fontSize:12}}/>
+              <div style={{display:"flex",gap:8,marginBottom:4}}>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:9,color:"#555",fontFamily:"'DM Mono',monospace",marginBottom:4}}>PROTEIN (g)</div>
+                  <input type="number" placeholder="e.g. 30" value={newMeal.protein}
+                    onChange={e=>setNewMeal({...newMeal,protein:e.target.value})}
+                    style={{...iSt,width:"100%",flex:"unset",background:"#161616"}}/>
+                </div>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:9,color:"#555",fontFamily:"'DM Mono',monospace",marginBottom:4}}>CALORIES</div>
+                  <input type="number" placeholder={`~${MEAL_CALORIES[newMeal.mealType]}`} value={newMeal.calories}
+                    onChange={e=>setNewMeal({...newMeal,calories:e.target.value})}
+                    style={{...iSt,width:"100%",flex:"unset",background:"#161616"}}/>
+                </div>
+              </div>
+              <div style={{fontSize:9,color:"#444",fontFamily:"'DM Mono',monospace",marginBottom:10}}>
+                Leave calories blank → auto ~{MEAL_CALORIES[newMeal.mealType]} kcal
+              </div>
+              <div style={{display:"flex",gap:8}}>
+                <Btn color={C} filled onClick={addMeal} style={{flex:1}}>{editMealId?"SAVE CHANGES":"ADD MEAL"}</Btn>
+                <Btn color="#444" onClick={()=>{setShowAddMeal(false);setEditMealId(null);}} style={{flex:1}}>CANCEL</Btn>
+              </div>
+            </Card>
+          )}
+
+          {dayMeals.map(meal=>(
+            <div key={meal.id} style={{background:"#0d0d0d",border:"1px solid #1e1e1e",borderRadius:10,padding:"10px 14px",marginBottom:6}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:9,color:"#444",fontFamily:"'DM Mono',monospace",letterSpacing:1,marginBottom:2}}>
+                    {meal.mealType.toUpperCase()}
+                    {meal.calories&&<span style={{color:C,marginLeft:8}}>{meal.calories} kcal</span>}
+                    {meal.protein&&<span style={{color:"#888",marginLeft:8}}>{meal.protein}g P</span>}
+                  </div>
+                  <div style={{fontSize:14,color:"#fff",fontFamily:"'Outfit',sans-serif",fontWeight:600}}>{meal.name}</div>
+                  {meal.notes&&<div style={{fontSize:12,color:"#555",fontFamily:"'Outfit',sans-serif",marginTop:2,lineHeight:1.4}}>{meal.notes}</div>}
+                </div>
+                <div style={{display:"flex",gap:4,marginLeft:8}}>
+                  <button onClick={()=>startEdit(meal)} style={{background:"none",border:"none",color:"#444",cursor:"pointer",fontSize:14,padding:"0 4px"}}>✎</button>
+                  <button onClick={()=>deleteMeal(meal.id)} style={{background:"none",border:"none",color:"#333",cursor:"pointer",fontSize:16,padding:"0 4px"}}>×</button>
+                </div>
+              </div>
+            </div>
+          ))}
+          {dayMeals.length===0&&!showAddMeal&&<Empty>NO MEALS LOGGED FOR {selectedDay.toUpperCase()}</Empty>}
+        </div>
+      )}
+
+      {tab==="grocery"&&(
+        <div>
+          <div style={{display:"flex",gap:8,marginBottom:14,alignItems:"center"}}>
+            {grocery.filter(g=>!g.checked).length>0&&<Tag color={C}>{grocery.filter(g=>!g.checked).length} items left</Tag>}
+            {grocery.some(g=>g.checked)&&<Btn color="#444" small onClick={clearChecked}>CLEAR DONE</Btn>}
+          </div>
+          <div style={{display:"flex",gap:8,marginBottom:14}}>
+            <input placeholder="Add item... (e.g. Chicken breast 500g)" value={newItem}
+              onChange={e=>setNewItem(e.target.value)}
+              onKeyDown={e=>e.key==="Enter"&&addGroceryItem()}
+              style={{...iSt,flex:1,textAlign:"left",padding:"10px 12px",width:"unset",background:"#161616",borderRadius:8}}/>
+            <Btn color={C} filled onClick={addGroceryItem} small style={{flexShrink:0}}>ADD</Btn>
+          </div>
+          {grocery.map(item=>(
+            <div key={item.id} onClick={()=>toggleGrocery(item.id)}
+              style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",
+                background:item.checked?"#0a1a0a":"#0d0d0d",
+                border:`1px solid ${item.checked?C+"33":"#1e1e1e"}`,
+                borderRadius:8,marginBottom:4,cursor:"pointer"}}>
+              <div style={{width:18,height:18,borderRadius:5,border:`1.5px solid ${item.checked?C:"#333"}`,
+                background:item.checked?C:"none",display:"flex",alignItems:"center",justifyContent:"center",
+                flexShrink:0,fontSize:11,color:"#000",fontWeight:700}}>
+                {item.checked?"✓":""}
+              </div>
+              <span style={{flex:1,fontSize:14,color:item.checked?"#444":"#ccc",fontFamily:"'Outfit',sans-serif",
+                textDecoration:item.checked?"line-through":"none"}}>{item.text}</span>
+              <button onClick={e=>{e.stopPropagation();deleteGrocery(item.id);}}
+                style={{background:"none",border:"none",color:"#333",cursor:"pointer",fontSize:16,padding:"0 4px"}}>×</button>
+            </div>
+          ))}
+          {grocery.length===0&&<Empty>YOUR SHOPPING LIST IS EMPTY</Empty>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── PADEL SECTION ────────────────────────────────────────────────────────────
+function PadelSection() {
+  const C = SEC.padel.color;
+  const [loaded, setLoaded] = useState(false);
+  const [tab, setTab]     = useState("skills");
+  const [skills, setSkills] = useState([]);
+  const [games, setGames]   = useState([]);
+  const [showAddSkill, setShowAddSkill] = useState(false);
+  const [showAddGame, setShowAddGame]   = useState(false);
+  const [newSkill, setNewSkill] = useState({title:"",note:"",category:"Shots"});
+  const [newGame, setNewGame]   = useState({result:"",partner:"",score:"",notes:"",rating:3});
+  const [editSkillId, setEditSkillId]   = useState(null);
+  const [deleteSkillId, setDeleteSkillId] = useState(null);
+  const cats = ["Movement","Shots","Strategy","Mental"];
+
+  useEffect(()=>{
+    (async()=>{
+      const [sk,gm] = await Promise.all([DB.get("padel_skills",PADEL_INIT_SKILLS), DB.get("padel_games",[])]);
+      setSkills(sk); setGames(gm); setLoaded(true);
+    })();
+  },[]);
+
+  const saveSkills = async s => { setSkills(s); await DB.set("padel_skills",s); };
+  const saveGames  = async g => { setGames(g);  await DB.set("padel_games",g); };
+
+  const addSkill = async () => {
+    if (!newSkill.title.trim()) return;
+    if (editSkillId) {
+      await saveSkills(skills.map(s=>s.id===editSkillId?{...s,...newSkill}:s));
+      setEditSkillId(null);
+    } else {
+      await saveSkills([...skills,{...newSkill,id:Date.now(),learned:false}]);
+    }
+    setNewSkill({title:"",note:"",category:"Shots"}); setShowAddSkill(false);
+  };
+
+  const startEditSkill = skill => {
+    setNewSkill({title:skill.title,note:skill.note||"",category:skill.category});
+    setEditSkillId(skill.id); setShowAddSkill(true); setDeleteSkillId(null);
+  };
+  const deleteSkill = async id => {
+    await saveSkills(skills.filter(s=>s.id!==id));
+    setDeleteSkillId(null);
+  };
+
+  const addGame = async () => {
+    if (!newGame.notes.trim()) return;
+    await saveGames([...games,{...newGame,id:Date.now(),date:new Date().toISOString()}]);
+    setNewGame({result:"",partner:"",score:"",notes:"",rating:3}); setShowAddGame(false);
+  };
+  const deleteGame = id => saveGames(games.filter(g=>g.id!==id));
+
+  const iSk = {...iSt,width:"100%",flex:"unset",background:"#161616",textAlign:"left",padding:"8px 10px"};
+  const taS = {width:"100%",background:"#161616",border:"1px solid #2a2a2a",borderRadius:8,color:"#ccc",
+    fontSize:12,fontFamily:"'Outfit',sans-serif",padding:"8px 10px",outline:"none",resize:"vertical",minHeight:60,boxSizing:"border-box"};
+
+  if (!loaded) return <Loader/>;
+
+  return (
+    <div style={{paddingBottom:20}}>
+      <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
+        <Tag color={C}>LEVEL 2.4</Tag>
+        <Tag color={C}>{skills.filter(s=>s.learned).length}/{skills.length} SKILLS</Tag>
+        <Tag color={C}>{games.length} GAMES</Tag>
+      </div>
+
+      <div style={{display:"flex",gap:0,marginBottom:14,background:"#0d0d0d",borderRadius:10,padding:4,border:"1px solid #1e1e1e"}}>
+        {[["skills","SKILLS"],["games","GAME LOG"],["focus","FOCUS"]].map(([t,l])=>(
+          <button key={t} onClick={()=>setTab(t)}
+            style={{flex:1,padding:"8px 0",borderRadius:8,border:"none",cursor:"pointer",
+              fontFamily:"'DM Mono',monospace",fontSize:10,fontWeight:700,letterSpacing:1.5,
+              background:tab===t?"#fff":"none",color:tab===t?"#000":"#444"}}>{l}</button>
+        ))}
+      </div>
+
+      {tab==="skills"&&(
+        <div>
+          {cats.map(cat=>{
+            const items=skills.filter(s=>s.category===cat);
+            if (!items.length) return null;
+            return (
+              <div key={cat} style={{marginBottom:14}}>
+                <SectionLabel color={C}>{cat}</SectionLabel>
+                {items.map(skill=>{
+                  const isDel=deleteSkillId===skill.id;
+                  return (
+                    <div key={skill.id} style={{background:skill.learned?"#0a1520":"#0d0d0d",
+                      border:`1px solid ${isDel?"#FF4D4D44":skill.learned?C+"44":"#1e1e1e"}`,
+                      borderRadius:10,padding:"10px 14px",marginBottom:6}}>
+                      {isDel?(
+                        <div style={{display:"flex",alignItems:"center",gap:10}}>
+                          <span style={{flex:1,fontSize:12,color:"#FF4D4D",fontFamily:"'Outfit',sans-serif"}}>Remove "{skill.title}"?</span>
+                          <button onClick={()=>deleteSkill(skill.id)}
+                            style={{background:"#FF4D4D22",border:"1px solid #FF4D4D55",color:"#FF4D4D",
+                              fontFamily:"'DM Mono',monospace",fontSize:10,fontWeight:700,padding:"4px 12px",borderRadius:6,cursor:"pointer"}}>YES</button>
+                          <button onClick={()=>setDeleteSkillId(null)}
+                            style={{background:"#161616",border:"1px solid #2a2a2a",color:"#555",
+                              fontFamily:"'DM Mono',monospace",fontSize:10,fontWeight:700,padding:"4px 12px",borderRadius:6,cursor:"pointer"}}>NO</button>
+                        </div>
+                      ):(
+                        <div style={{display:"flex",gap:12,alignItems:"flex-start"}}>
+                          <div onClick={()=>saveSkills(skills.map(s=>s.id===skill.id?{...s,learned:!s.learned}:s))}
+                            style={{width:18,height:18,borderRadius:4,border:`1.5px solid ${skill.learned?C:"#333"}`,
+                              background:skill.learned?C+"22":"none",flexShrink:0,marginTop:2,cursor:"pointer",
+                              display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,color:C}}>
+                            {skill.learned?"✓":""}
+                          </div>
+                          <div style={{flex:1}}>
+                            <div style={{fontSize:13,color:skill.learned?"#fff":"#777",fontFamily:"'Outfit',sans-serif",fontWeight:600}}>{skill.title}</div>
+                            {skill.note&&<div style={{fontSize:11,color:"#555",fontFamily:"'Outfit',sans-serif",marginTop:2,lineHeight:1.5}}>{skill.note}</div>}
+                          </div>
+                          <div style={{display:"flex",gap:4,flexShrink:0}}>
+                            <button onClick={()=>startEditSkill(skill)}
+                              style={{background:"none",border:"none",color:"#444",cursor:"pointer",fontSize:14,padding:"0 4px",lineHeight:1}}>✎</button>
+                            <button onClick={()=>setDeleteSkillId(skill.id)}
+                              style={{background:"none",border:"none",color:"#333",cursor:"pointer",fontSize:16,padding:"0 4px",lineHeight:1}}>×</button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
+          {!showAddSkill
+            ?<Btn color={C} onClick={()=>{setShowAddSkill(true);setEditSkillId(null);setNewSkill({title:"",note:"",category:"Shots"});}}
+                style={{width:"100%",marginTop:4}}>+ ADD SKILL</Btn>
+            :<Card>
+                <SectionLabel color={C}>{editSkillId?"EDIT SKILL":"NEW SKILL"}</SectionLabel>
+                <select value={newSkill.category} onChange={e=>setNewSkill({...newSkill,category:e.target.value})} style={{...iSk,marginBottom:8}}>
+                  {cats.map(c=><option key={c} value={c}>{c}</option>)}
+                </select>
+                <input placeholder="Skill name" value={newSkill.title} onChange={e=>setNewSkill({...newSkill,title:e.target.value})} style={{...iSk,marginBottom:8}}/>
+                <textarea placeholder="Notes..." value={newSkill.note} onChange={e=>setNewSkill({...newSkill,note:e.target.value})} style={{...taS,marginBottom:8}}/>
+                <div style={{display:"flex",gap:8}}>
+                  <Btn color={C} filled onClick={addSkill} style={{flex:1}}>{editSkillId?"SAVE CHANGES":"SAVE"}</Btn>
+                  <Btn color="#444" onClick={()=>{setShowAddSkill(false);setEditSkillId(null);}} style={{flex:1}}>CANCEL</Btn>
+                </div>
+              </Card>
+          }
+        </div>
+      )}
+
+      {tab==="games"&&(
+        <div>
+          <Btn color={C} filled onClick={()=>setShowAddGame(true)} style={{width:"100%",marginBottom:14}}>+ LOG GAME</Btn>
+          {showAddGame&&(
+            <Card style={{marginBottom:14}}>
+              <SectionLabel color={C}>LOG GAME</SectionLabel>
+              <div style={{display:"flex",gap:8,marginBottom:8}}>
+                {[["W","Win"],["L","Loss"],["D","Draw"]].map(([v,l])=>(
+                  <button key={v} onClick={()=>setNewGame({...newGame,result:v})}
+                    style={{flex:1,padding:"7px",borderRadius:8,border:`1.5px solid ${newGame.result===v?C:"#2a2a2a"}`,
+                      background:newGame.result===v?C+"22":"#161616",color:newGame.result===v?C:"#555",
+                      fontFamily:"'DM Mono',monospace",fontSize:12,fontWeight:700,cursor:"pointer"}}>{l}</button>
+                ))}
+              </div>
+              <input placeholder="Score (e.g. 6-4 4-6 6-3)" value={newGame.score} onChange={e=>setNewGame({...newGame,score:e.target.value})} style={{...iSk,marginBottom:8}}/>
+              <input placeholder="Partner (optional)" value={newGame.partner} onChange={e=>setNewGame({...newGame,partner:e.target.value})} style={{...iSk,marginBottom:8}}/>
+              <div style={{marginBottom:10}}>
+                <div style={{fontSize:9,color:"#555",fontFamily:"'DM Mono',monospace",marginBottom:6}}>RATING</div>
+                <div style={{display:"flex",gap:6}}>
+                  {[1,2,3,4,5].map(n=>(
+                    <button key={n} onClick={()=>setNewGame({...newGame,rating:n})}
+                      style={{flex:1,padding:"6px 0",borderRadius:6,border:`1px solid ${newGame.rating>=n?C:"#2a2a2a"}`,
+                        background:newGame.rating>=n?C+"22":"#161616",color:newGame.rating>=n?C:"#444",fontSize:14,cursor:"pointer"}}>★</button>
+                  ))}
+                </div>
+              </div>
+              <textarea placeholder="How did you play? What worked? What to improve?" value={newGame.notes}
+                onChange={e=>setNewGame({...newGame,notes:e.target.value})} style={{...taS,minHeight:80,marginBottom:8}}/>
+              <div style={{display:"flex",gap:8}}>
+                <Btn color={C} filled onClick={addGame} style={{flex:1}}>SAVE</Btn>
+                <Btn color="#444" onClick={()=>setShowAddGame(false)} style={{flex:1}}>CANCEL</Btn>
+              </div>
+            </Card>
+          )}
+          {[...games].reverse().map(g=>(
+            <Card key={g.id}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
+                <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                  <span style={{fontSize:13,fontWeight:700,fontFamily:"'DM Mono',monospace",
+                    color:g.result==="W"?"#00C875":g.result==="L"?"#FF4D4D":"#FFB800"}}>
+                    {g.result==="W"?"WIN":g.result==="L"?"LOSS":"DRAW"}
+                  </span>
+                  {g.score&&<span style={{fontSize:12,color:"#666",fontFamily:"'DM Mono',monospace"}}>{g.score}</span>}
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <div style={{display:"flex",gap:2}}>{[1,2,3,4,5].map(n=>(
+                    <span key={n} style={{color:g.rating>=n?C:"#2a2a2a",fontSize:12}}>★</span>
+                  ))}</div>
+                  <button onClick={()=>deleteGame(g.id)}
+                    style={{background:"none",border:"none",color:"#333",cursor:"pointer",fontSize:16,padding:0}}>×</button>
+                </div>
+              </div>
+              {g.partner&&<div style={{fontSize:11,color:"#555",fontFamily:"'DM Mono',monospace",marginBottom:4}}>w/ {g.partner}</div>}
+              <div style={{fontSize:13,color:"#ccc",fontFamily:"'Outfit',sans-serif",lineHeight:1.5}}>{g.notes}</div>
+              <div style={{fontSize:10,color:"#333",fontFamily:"'DM Mono',monospace",marginTop:6}}>
+                {new Date(g.date).toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short"})}
+              </div>
+            </Card>
+          ))}
+          {games.length===0&&!showAddGame&&<Empty>LOG YOUR FIRST GAME</Empty>}
+        </div>
+      )}
+
+      {tab==="focus"&&(
+        <div>
+          <SectionLabel color={C}>CURRENT FOCUS AREAS</SectionLabel>
+          {[
+            {title:"Serve improvement",sub:"Work on placement — practice serving to the T and body. Consistency before power."},
+            {title:"Vibora / Smash",sub:"Build power on attacking overhead. Focus on feet positioning and snap wrist at contact."},
+            {title:"Net hands / wrist reflexes",sub:"Quick reflex volleys at net. Practice with partner feeding rapid balls to both sides."},
+            {title:"Tactical positioning",sub:"After hitting left side → immediately cover middle. Hold your court formation after every shot."},
+            {title:"Glass play (Bandeja)",sub:"Keep working on consistency off the glass. Height and angle — aim deep."},
+          ].map((f,i)=>(
+            <Card key={i} style={{marginBottom:8}}>
+              <div style={{fontSize:13,fontWeight:600,color:"#fff",fontFamily:"'Outfit',sans-serif",marginBottom:3}}>{f.title}</div>
+              <div style={{fontSize:12,color:"#666",fontFamily:"'Outfit',sans-serif",lineHeight:1.5}}>{f.sub}</div>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── ROOT ─────────────────────────────────────────────────────────────────────
+function App() {
+  const [section, setSection] = useState("gym");
+  const [gymTab, setGymTab]   = useState("plan");
+  const sec = SEC[section];
+
+  return (
+    <div style={{minHeight:"100vh",background:"#060606",fontFamily:"'Outfit',sans-serif"}}>
+      <style>{`
+        @keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+        input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none}
+        *{box-sizing:border-box}
+        ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:#111}::-webkit-scrollbar-thumb{background:#2a2a2a;border-radius:2px}
+        select option{background:#161616;color:#fff}
+      `}</style>
+
+      <div style={{background:"#080808",borderBottom:"1px solid #1a1a1a",padding:"20px 20px 0",position:"sticky",top:0,zIndex:20}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginBottom:14}}>
+          <div>
+            <div style={{fontSize:9,color:"#333",fontFamily:"'DM Mono',monospace",letterSpacing:4,marginBottom:3}}>FITNESS PROFILE</div>
+            <div style={{fontSize:30,fontFamily:"'Bebas Neue',sans-serif",color:"#fff",letterSpacing:2,lineHeight:1}}>TRAINER</div>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:6}}>
+            <div style={{width:7,height:7,borderRadius:"50%",background:sec.color,boxShadow:`0 0 8px ${sec.color}`}}/>
+            <span style={{fontSize:10,color:sec.color,fontFamily:"'DM Mono',monospace",letterSpacing:2}}>{sec.label}</span>
+          </div>
+        </div>
+
+        <div style={{display:"flex",gap:0}}>
+          {Object.values(SEC).map(s=>(
+            <button key={s.id} onClick={()=>setSection(s.id)}
+              style={{flex:1,padding:"10px 0",background:"none",border:"none",cursor:"pointer",
+                borderBottom:`2px solid ${section===s.id?s.color:"transparent"}`,
+                color:section===s.id?"#fff":"#444",
+                fontFamily:"'DM Mono',monospace",fontSize:11,fontWeight:700,letterSpacing:2,transition:"all .15s"}}>
+              {s.icon} {s.label}
+            </button>
+          ))}
+        </div>
+
+        {section==="gym"&&(
+          <div style={{display:"flex",gap:0,paddingTop:2}}>
+            {[["plan","PROGRAM"],["log","WORKOUT"],["history","HISTORY"]].map(([t,l])=>(
+              <button key={t} onClick={()=>setGymTab(t)}
+                style={{flex:1,padding:"8px 0",background:"none",border:"none",cursor:"pointer",
+                  color:gymTab===t?sec.color:"#333",fontFamily:"'DM Mono',monospace",fontSize:9,letterSpacing:2,transition:"all .15s"}}>
+                {l}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div style={{padding:"16px 16px 80px",maxWidth:540,margin:"0 auto"}}>
+        {section==="gym"   && <GymSection   tab={gymTab} setTab={setGymTab}/>}
+        {section==="food"  && <FoodSection  />}
+        {section==="padel" && <PadelSection />}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
+
+</script>
+</body>
+</html>
